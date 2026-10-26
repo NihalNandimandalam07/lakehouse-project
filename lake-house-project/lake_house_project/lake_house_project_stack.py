@@ -145,6 +145,98 @@ class LakeHouseProjectStack(Stack):
             ]
         )
 
+        #MySQL SG
+        rds_sg = ec2.SecurityGroup(
+            self,
+            "LakehouseRDSSG",
+            vpc= lakehouse_vpc,
+            security_group_name="lakehouse-rds-sg-nn",
+            allow_all_outbound=False
+        )
+
+        #Glue SG
+        glue_sg = ec2.SecurityGroup(
+            self,
+            "LakehouseGlueSG",
+            vpc= lakehouse_vpc,
+            security_group_name="lakehouse-glue-sg-nn",
+            allow_all_outbound=False
+        )
+
+        #streaming SG
+        stream_sg = ec2.SecurityGroup(
+            self,
+            "LakehouseStreamSG",
+            vpc= lakehouse_vpc,
+            security_group_name="lakehouse-stream-sg-nn",
+            allow_all_outbound=False
+        )
+
+        #EC2 SG
+        ec2_sg = ec2.SecurityGroup(
+            self,
+            "LakehouseEC2SG",
+            vpc= lakehouse_vpc,
+            security_group_name="lakehouse-ec2-sg-nn",
+            allow_all_outbound=False
+        )
+
+        ##
+        ##SG Rules
+        ##
+
+        #Glue to connect to MySQL
+        rds_sg.add_ingress_rule(
+            peer=glue_sg,
+            connection=ec2.Port.tcp(3306),
+            description="Glue to access MySQL"
+        )
+
+        glue_sg.add_egress_rule(
+            peer=rds_sg,
+            connection=ec2.Port.tcp(3306),
+            description="Glue to MySQL"
+        )
+
+        #EC2 prodcucer to connect to stream
+        stream_sg.add_ingress_rule(
+            peer=ec2_sg,
+            connection=ec2.Port.tcp(9098),
+            description="Allow EC2 kafka producer"
+        )
+
+        ec2_sg.add_egress_rule(
+            peer=stream_sg,
+            connection=ec2.Port.tcp(9098),
+            description="EC2 to stream"
+        )
+
+        #glue stream jobs to connect tp stream
+        stream_sg.add_ingress_rule(
+            peer=glue_sg,
+            connection=ec2.Port.tcp(9098),
+            description="Allow glue streaming consumer"
+        )
+
+        glue_sg.add_egress_rule(
+            peer=stream_sg,
+            connection=ec2.Port.tcp(9098),
+            description="Glue to stream"
+        )
+
+        #glue to glue
+        glue_sg.add_ingress_rule(
+            peer=glue_sg,
+            connection=ec2.Port.all_tcp(),
+            description="allowing glue internal communication"
+        )
+
+        glue_sg.add_egress_rule(
+            peer=glue_sg,
+            connection=ec2.Port.all_tcp(),
+            description="allowing glue internal communication"
+        )
+
 
         #outputs
         buckets = {
@@ -191,7 +283,32 @@ class LakeHouseProjectStack(Stack):
                 subnet.subnet_id
                 for subnet in lakehouse_vpc.public_subnets
             )
-        )    
+        ) 
+
+        CfnOutput(
+            self,
+            "LakehouseRDSSGID",
+            value=rds_sg.security_group_id
+        )  
+
+        CfnOutput(
+            self,
+            "LakehouseGlueSGID",
+            value=glue_sg.security_group_id
+        )
+
+        CfnOutput(
+            self,
+            "LakehouseStreamSGID",
+            value=stream_sg.security_group_id
+        )
+
+        CfnOutput(
+            self,
+            "LakehouseEC2SGID",
+            value=ec2_sg.security_group_id
+        )
+
 
 
 
