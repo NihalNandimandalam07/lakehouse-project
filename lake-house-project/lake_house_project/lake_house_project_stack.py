@@ -5,6 +5,7 @@ from lake_house_project.storage import LakehouseStorage
 from lake_house_project.networking import LakehouseNetworking
 from lake_house_project.security_groups import LakehouseSecurityGroups
 from lake_house_project.rds import LakehouseRDS
+from lake_house_project.ec2_rds import LakehouseEC2
 
 
 class LakeHouseProjectStack(Stack):
@@ -23,4 +24,10 @@ class LakeHouseProjectStack(Stack):
             vpc=self.networking.vpc,
             rds_sg=self.security_groups.rds_sg,
             kms_key=self.storage.kms_key,
+        )
+
+        self.ec2 = LakehouseEC2(
+            self,
+            vpc=self.networking.vpc,
+            rds_sg=self.security_groups.rds_sg,
         )

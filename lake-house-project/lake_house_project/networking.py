@@ -20,7 +20,7 @@ class LakehouseNetworking:
             "lakehouseVPC",
             ip_addresses=ec2.IpAddresses.cidr("10.0.0.0/16"),
             max_azs=2,
-            nat_gateways=2,
+            nat_gateways=0,
 
             subnet_configuration=[
                 ec2.SubnetConfiguration(
