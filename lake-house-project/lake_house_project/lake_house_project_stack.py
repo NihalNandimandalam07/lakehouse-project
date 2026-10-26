@@ -1,10 +1,10 @@
 from aws_cdk import (
     Stack,
     RemovalPolicy,
-    Tags,
     CfnOutput,
     aws_s3 as s3,
     aws_kms as kms,
+    aws_ec2 as ec2,
 )
 from constructs import Construct
 
@@ -112,6 +112,39 @@ class LakeHouseProjectStack(Stack):
             removal_policy=RemovalPolicy.RETAIN
         )
 
+        #VPC
+        lakehouse_vpc = ec2.Vpc(
+            self,
+            "lakehouseVPC",
+            ip_addresses=ec2.IpAddresses.cidr("10.0.0.0/16"),
+            max_azs=2,
+            nat_gateways=2,
+
+            subnet_configuration=[
+                ec2.SubnetConfiguration(
+                    name="lakehouse-public-nn",
+                    subnet_type=ec2.SubnetType.PUBLIC,
+                    cidr_mask=24
+                ),
+                ec2.SubnetConfiguration(
+                    name="lakehouse-private-nn",
+                    subnet_type=ec2.SubnetType.PRIVATE_ISOLATED,
+                    cidr_mask=24
+                )
+            ]
+        )
+
+        #S3 Gateway Endpoint
+        s3_endpoint = lakehouse_vpc.add_gateway_endpoint(
+            "LakehouseS3Endpoint",
+            service=ec2.GatewayVpcEndpointAwsService.S3,
+            subnets=[
+                ec2.SubnetSelection(
+                    subnet_type=ec2.SubnetType.PRIVATE_ISOLATED
+                )
+            ]
+        )
+
 
         #outputs
         buckets = {
@@ -134,6 +167,32 @@ class LakeHouseProjectStack(Stack):
             self,
             "LakehouseKMSKeyOutput",
             value=lakehouse_kms_key.key_arn
+        )
+
+        CfnOutput(
+            self,
+            "LakehouseVPCId",
+            value=lakehouse_vpc.vpc_id
+        ) 
+
+        CfnOutput(
+            self,
+            "LakehousePrivateSubnets",
+            value=",".join(
+                subnet.subnet_id
+                for subnet in lakehouse_vpc.isolated_subnets
+            )
+        )
+
+        CfnOutput(
+            self,
+            "LakehousePublicSubnets",
+            value=",".join(
+                subnet.subnet_id
+                for subnet in lakehouse_vpc.public_subnets
+            )
         )    
+
+
 
 
