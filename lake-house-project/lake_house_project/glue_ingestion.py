@@ -146,7 +146,7 @@ class LakehouseGlue:
         )
 
         #Upload Glue scripts to S3
-        deployment = s3_deployment.BucketDeployment(
+        self.deployment = deployment = s3_deployment.BucketDeployment(
             scope,
             "LakehouseGlueScriptDeployment",
             sources=[s3_deployment.Source.asset("./glue_scripts")],
