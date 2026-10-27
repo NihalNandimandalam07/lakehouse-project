@@ -10,6 +10,7 @@ from lake_house_project.glue_ingestion import LakehouseGlue
 from lake_house_project.networking_streaming import LakehouseStreamingNetworking
 from lake_house_project.glue_streaming import GlueStreaming
 from lake_house_project.datasync import LakehouseDataSync
+from lake_house_project.glue_transformation import LakehouseGlueTransformation
 
 
 class LakeHouseProjectStack(Stack):
@@ -78,4 +79,13 @@ class LakeHouseProjectStack(Stack):
             source_bucket=self.storage.source_bucket,
             landing_bucket=self.storage.landing_bucket,
             kms_key=self.storage.kms_key,
+        )
+
+        self.landing_to_raw = LakehouseGlueTransformation(
+            self,
+            landing_bucket=self.storage.landing_bucket,
+            raw_bucket=self.storage.raw_bucket,
+            script_bucket=self.storage.glue_assets_bucket,
+            kms_key=self.storage.kms_key,
+            script_deployment=self.glue.deployment,
         )
