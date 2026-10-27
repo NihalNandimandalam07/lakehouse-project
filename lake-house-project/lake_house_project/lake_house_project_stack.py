@@ -9,6 +9,7 @@ from lake_house_project.ec2_rds import LakehouseEC2
 from lake_house_project.glue_ingestion import LakehouseGlue
 from lake_house_project.networking_streaming import LakehouseStreamingNetworking
 from lake_house_project.glue_streaming import GlueStreaming
+from lake_house_project.datasync import LakehouseDataSync
 
 
 class LakeHouseProjectStack(Stack):
@@ -70,4 +71,11 @@ class LakeHouseProjectStack(Stack):
             kafka_secret_arn="arn:aws:secretsmanager:us-east-2:909698979753:secret:kafka_credentials_testing-XVmehU",
             kafka_bootstrap_servers="10.0.0.10:9092,10.0.1.10:9092,10.0.2.10:9092",
             kafka_topic="lakehouse-topic",
+        )
+
+        self.datasync = LakehouseDataSync(
+            self,
+            source_bucket=self.storage.source_bucket,
+            landing_bucket=self.storage.landing_bucket,
+            kms_key=self.storage.kms_key,
         )
