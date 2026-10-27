@@ -47,6 +47,15 @@ class LakehouseNetworking:
             ]
         )
 
+        self.sts_endpoint = self.vpc.add_interface_endpoint(
+            "LakehouseSTSEndpoint",
+            service=ec2.InterfaceVpcEndpointAwsService.STS,
+            subnets=ec2.SubnetSelection(
+                subnet_type=ec2.SubnetType.PRIVATE_ISOLATED
+            ),
+            private_dns_enabled=True
+        )
+
         #outputs
         CfnOutput(
             scope,
