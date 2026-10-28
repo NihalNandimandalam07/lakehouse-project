@@ -39,6 +39,7 @@ transformed = f"s3://{args['TRANSFORMED_BUCKET']}"
 # --------------------------------------------------
 # 4. Dataset Configuration
 # --------------------------------------------------
+# flatfiles/customers is transformed by the DataBrew recipe job
 DATASETS = [
     {
         "name": "mysql_employees",
@@ -49,11 +50,6 @@ DATASETS = [
         "name": "kafka_employees",
         "source": "kafka/employees/",
         "target": "kafka/employees/"
-    },
-    {
-        "name": "flatfile_customers",
-        "source": "flatfiles/customers/",
-        "target": "flatfiles/customers/"
     },
     {
         "name": "covid19_activity",
@@ -181,53 +177,7 @@ def transform_kafka_employees(df):
     return add_salary_band(df)
 
 # --------------------------------------------------
-# 10. Customer Transformations
-# --------------------------------------------------
-def transform_customers(df):
-    print("Transforming customer data")
-    # Standardize email addresses and status values.
-    df = df.withColumn(
-        "email",
-        F.lower(F.col("email"))
-    )
-    df = df.withColumn(
-        "customer_status",
-        F.lower(F.col("customer_status"))
-    )
-    df = df.withColumn(
-        "full_name",
-        F.concat_ws(" ", F.col("first_name"), F.col("last_name"))
-    )
-    df = df.withColumn(
-        "date_of_birth",
-        F.to_date(F.col("date_of_birth"))
-    )
-    df = df.withColumn(
-        "creation_date",
-        F.to_date(F.col("creation_date"))
-    )
-    # Customer segmentation based on annual income.
-    df = df.withColumn(
-        "annual_income",
-        F.col("annual_income").cast("double")
-    )
-    df = df.withColumn(
-        "income_segment",
-        F.when(
-            F.col("annual_income").isNull(),
-            "Unknown"
-        ).when(
-            F.col("annual_income") >= 100000,
-            "Premium"
-        ).when(
-            F.col("annual_income") >= 70000,
-            "Gold"
-        ).otherwise("Standard")
-    )
-    return df
-
-# --------------------------------------------------
-# 11. COVID-19 Activity Transformations
+# 10. COVID-19 Activity Transformations
 # --------------------------------------------------
 def transform_covid(df):
     print("Transforming COVID-19 activity data")
@@ -259,12 +209,11 @@ def transform_covid(df):
 TRANSFORMS = {
     "mysql_employees": transform_mysql_employees,
     "kafka_employees": transform_kafka_employees,
-    "flatfile_customers": transform_customers,
     "covid19_activity": transform_covid,
 }
 
 # --------------------------------------------------
-# 12. Dataset Processing
+# 11. Dataset Processing
 # --------------------------------------------------
 for dataset in DATASETS:
     source_path = (
@@ -300,7 +249,7 @@ for dataset in DATASETS:
     )
 
 # --------------------------------------------------
-# 13. Commit Glue Job
+# 12. Commit Glue Job
 # --------------------------------------------------
 job.commit()
 print("Raw to Transformed ETL completed")

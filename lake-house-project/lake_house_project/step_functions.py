@@ -1,3 +1,5 @@
+from typing import List
+
 from aws_cdk import (
     Stack,
     Duration,
@@ -5,11 +7,12 @@ from aws_cdk import (
     aws_stepfunctions as sfn,
     aws_stepfunctions_tasks as tasks,
     aws_glue as glue,
+    aws_databrew as databrew,
 )
 
 
 class LakehouseStepFunctions:
-    """Step Functions workflow running the lakehouse Glue jobs in order.
+    """Step Functions workflow running the lakehouse Glue and DataBrew jobs in order.
 
     Resources are created directly on the stack (not a nested Construct)
     so their CloudFormation logical IDs stay unchanged.
@@ -20,6 +23,8 @@ class LakehouseStepFunctions:
         scope: Stack,
         landing_to_raw_job: glue.CfnJob,
         raw_to_transformed_job: glue.CfnJob,
+        data_quality_jobs: List[databrew.CfnJob],
+        customers_recipe_job: databrew.CfnJob,
     ) -> None:
 
         #Glue job tasks (RUN_JOB waits for each job to finish)
@@ -36,21 +41,10 @@ class LakehouseStepFunctions:
             "RawToTransformedTask",
             glue_job_name=raw_to_transformed_job.ref,
             integration_pattern=sfn.IntegrationPattern.RUN_JOB,
-            result_path="$.raw_to_transformed_result",
+            result_path=sfn.JsonPath.DISCARD,
         )
 
-        failure = sfn.Fail(
-            scope,
-            "LakehouseWorkflowFailed",
-            cause="A Glue ETL job failed",
-        )
-
-        success = sfn.Succeed(
-            scope,
-            "LakehouseWorkflowSucceeded",
-        )
-
-        #retry transient Glue errors, otherwise stop the workflow
+        #retry transient Glue errors
         for task in [landing_to_raw_task, raw_to_transformed_task]:
             task.add_retry(
                 errors=[
@@ -61,12 +55,58 @@ class LakehouseStepFunctions:
                 max_attempts=2,
                 backoff_rate=2,
             )
-            task.add_catch(failure, result_path="$.error")
 
-        #landing -> raw -> transformed
+        #DataBrew data quality checks on raw (report only, results in S3)
+        data_quality = sfn.Parallel(
+            scope,
+            "RawDataQualityChecks",
+            result_path=sfn.JsonPath.DISCARD,
+        )
+        for job in data_quality_jobs:
+            data_quality.branch(
+                tasks.GlueDataBrewStartJobRun(
+                    scope,
+                    f"DataQuality-{job.name}",
+                    name=job.ref,
+                    integration_pattern=sfn.IntegrationPattern.RUN_JOB,
+                )
+            )
+
+        #raw -> transformed: Glue (employees, COVID) and DataBrew (customers)
+        transform = sfn.Parallel(
+            scope,
+            "RawToTransformed",
+            result_path=sfn.JsonPath.DISCARD,
+        )
+        transform.branch(raw_to_transformed_task)
+        transform.branch(
+            tasks.GlueDataBrewStartJobRun(
+                scope,
+                "CustomersRecipeTask",
+                name=customers_recipe_job.ref,
+                integration_pattern=sfn.IntegrationPattern.RUN_JOB,
+            )
+        )
+
+        failure = sfn.Fail(
+            scope,
+            "LakehouseWorkflowFailed",
+            cause="A Glue or DataBrew job failed",
+        )
+
+        success = sfn.Succeed(
+            scope,
+            "LakehouseWorkflowSucceeded",
+        )
+
+        for step in [landing_to_raw_task, data_quality, transform]:
+            step.add_catch(failure, result_path="$.error")
+
+        #landing -> raw -> data quality -> transformed
         definition = (
             landing_to_raw_task
-            .next(raw_to_transformed_task)
+            .next(data_quality)
+            .next(transform)
             .next(success)
         )
 

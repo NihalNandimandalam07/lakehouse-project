@@ -12,6 +12,7 @@ from lake_house_project.glue_streaming import GlueStreaming
 from lake_house_project.datasync import LakehouseDataSync
 from lake_house_project.glue_landing_to_raw import LakehouseLandingToRaw
 from lake_house_project.glue_raw_to_transformed import LakehouseRawToTransformed
+from lake_house_project.databrew import LakehouseDataBrew
 from lake_house_project.step_functions import LakehouseStepFunctions
 
 
@@ -101,8 +102,18 @@ class LakeHouseProjectStack(Stack):
             script_deployment=self.glue.deployment,
         )
 
+        self.databrew = LakehouseDataBrew(
+            self,
+            raw_bucket=self.storage.raw_bucket,
+            transformed_bucket=self.storage.transformed_bucket,
+            results_bucket=self.storage.glue_assets_bucket,
+            kms_key=self.storage.kms_key,
+        )
+
         self.step_functions = LakehouseStepFunctions(
             self,
             landing_to_raw_job=self.landing_to_raw.job,
             raw_to_transformed_job=self.raw_to_transformed.job,
+            data_quality_jobs=self.databrew.profile_jobs,
+            customers_recipe_job=self.databrew.customers_recipe_job,
         )
