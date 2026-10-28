@@ -15,6 +15,8 @@ from lake_house_project.glue_raw_to_transformed import LakehouseRawToTransformed
 from lake_house_project.databrew import LakehouseDataBrew
 from lake_house_project.glue_transformed_to_curated import LakehouseTransformedToCurated
 from lake_house_project.glue_transformed_crawler import LakehouseTransformedCrawler
+from lake_house_project.redshift import LakehouseRedshift
+from lake_house_project.glue_curated_to_redshift import LakehouseCuratedToRedshift
 from lake_house_project.step_functions import LakehouseStepFunctions
 
 
@@ -128,6 +130,25 @@ class LakeHouseProjectStack(Stack):
             kms_key=self.storage.kms_key,
         )
 
+        self.redshift = LakehouseRedshift(
+            self,
+            vpc=self.networking.vpc,
+            glue_sg=self.security_groups.glue_sg,
+            staging_bucket=self.storage.glue_assets_bucket,
+            kms_key=self.storage.kms_key,
+        )
+
+        self.curated_to_redshift = LakehouseCuratedToRedshift(
+            self,
+            vpc=self.networking.vpc,
+            glue_sg=self.security_groups.glue_sg,
+            curated_bucket=self.storage.curated_bucket,
+            script_bucket=self.storage.glue_assets_bucket,
+            kms_key=self.storage.kms_key,
+            redshift=self.redshift,
+            script_deployment=self.glue.deployment,
+        )
+
         self.step_functions = LakehouseStepFunctions(
             self,
             landing_to_raw_job=self.landing_to_raw.job,
@@ -135,4 +156,5 @@ class LakeHouseProjectStack(Stack):
             data_quality_jobs=self.databrew.profile_jobs,
             customers_recipe_job=self.databrew.customers_recipe_job,
             transformed_to_curated_job=self.transformed_to_curated.job,
+            curated_to_redshift_job=self.curated_to_redshift.job,
         )

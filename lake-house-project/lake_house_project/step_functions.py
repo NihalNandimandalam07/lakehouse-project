@@ -26,6 +26,7 @@ class LakehouseStepFunctions:
         data_quality_jobs: List[databrew.CfnJob],
         customers_recipe_job: databrew.CfnJob,
         transformed_to_curated_job: glue.CfnJob,
+        curated_to_redshift_job: glue.CfnJob,
     ) -> None:
 
         #Glue job tasks (RUN_JOB waits for each job to finish)
@@ -53,8 +54,16 @@ class LakehouseStepFunctions:
             result_path=sfn.JsonPath.DISCARD,
         )
 
+        curated_to_redshift_task = tasks.GlueStartJobRun(
+            scope,
+            "CuratedToRedshiftTask",
+            glue_job_name=curated_to_redshift_job.ref,
+            integration_pattern=sfn.IntegrationPattern.RUN_JOB,
+            result_path=sfn.JsonPath.DISCARD,
+        )
+
         #retry transient Glue errors
-        for task in [landing_to_raw_task, raw_to_transformed_task, transformed_to_curated_task]:
+        for task in [landing_to_raw_task, raw_to_transformed_task, transformed_to_curated_task, curated_to_redshift_task]:
             task.add_retry(
                 errors=[
                     "Glue.ConcurrentRunsExceededException",
@@ -108,15 +117,16 @@ class LakehouseStepFunctions:
             "LakehouseWorkflowSucceeded",
         )
 
-        for step in [landing_to_raw_task, data_quality, transform, transformed_to_curated_task]:
+        for step in [landing_to_raw_task, data_quality, transform, transformed_to_curated_task, curated_to_redshift_task]:
             step.add_catch(failure, result_path="$.error")
 
-        #landing -> raw -> data quality -> transformed -> curated
+        #landing -> raw -> data quality -> transformed -> curated -> Redshift
         definition = (
             landing_to_raw_task
             .next(data_quality)
             .next(transform)
             .next(transformed_to_curated_task)
+            .next(curated_to_redshift_task)
             .next(success)
         )
 
