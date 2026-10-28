@@ -7,7 +7,6 @@ from aws_cdk import (
     aws_iam as iam,
     aws_s3 as s3,
     aws_kms as kms,
-    aws_lakeformation as lakeformation,
 )
 
 
@@ -30,7 +29,7 @@ CURATED_DATASETS = {
 
 
 class LakehouseTransformedCrawler:
-    """Glue database and crawlers cataloguing the transformed and curated zones.
+    """Glue crawlers cataloguing the transformed and curated zones.
 
     Resources are created directly on the stack (not a nested Construct)
     so their CloudFormation logical IDs stay unchanged.
@@ -42,19 +41,14 @@ class LakehouseTransformedCrawler:
         transformed_bucket: s3.IBucket,
         curated_bucket: s3.IBucket,
         kms_key: kms.IKey,
-        database_name: str = "lakehouse_db_nn",
+        database_name: str = "lakehouse_catalog_nn",
     ) -> None:
 
-        #Glue Database
-        self.database = glue.CfnDatabase(
-            scope,
-            "LakehouseGlueDatabase",
-            catalog_id=scope.account,
-            database_input=glue.CfnDatabase.DatabaseInputProperty(
-                name=database_name,
-                description="Lakehouse transformed and curated zone tables",
-            ),
-        )
+        #Lake Formation only lets a database's creator (or a data lake admin) see it and
+        #grant on it, so the database is created outside CDK by the SSO role that queries it:
+        #  aws glue create-database --region us-east-2 \
+        #    --database-input '{"Name":"lakehouse_catalog_nn"}'
+        #and, as that role, the crawler role is granted CREATE_TABLE, ALTER and DESCRIBE on it.
 
         #Crawler IAM Role
         crawler_role = iam.Role(
@@ -73,26 +67,6 @@ class LakehouseTransformedCrawler:
         kms_key.grant_decrypt(crawler_role)
         transformed_bucket.grant_read(crawler_role)
         curated_bucket.grant_read(crawler_role)
-
-        #Lake Formation controls the catalog in this account, so IAM alone isn't enough.
-        #The deploy role created the database, which lets it grant on it; the crawler
-        #gets full access to the tables it creates, so the database grant is all it needs.
-        database_grant = lakeformation.CfnPrincipalPermissions(
-            scope,
-            "LakehouseCrawlerDatabasePermissions",
-            principal=lakeformation.CfnPrincipalPermissions.DataLakePrincipalProperty(
-                data_lake_principal_identifier=crawler_role.role_arn,
-            ),
-            resource=lakeformation.CfnPrincipalPermissions.ResourceProperty(
-                database=lakeformation.CfnPrincipalPermissions.DatabaseResourceProperty(
-                    catalog_id=scope.account,
-                    name=database_name,
-                )
-            ),
-            permissions=["CREATE_TABLE", "ALTER", "DESCRIBE"],
-            permissions_with_grant_option=[],
-        )
-        database_grant.node.add_dependency(self.database)
 
         self.crawlers = []
 
@@ -135,7 +109,6 @@ class LakehouseTransformedCrawler:
                 }),
             )
 
-            crawler.node.add_dependency(database_grant)
             crawler.node.add_dependency(crawler_role)
             self.crawlers.append(crawler)
 
