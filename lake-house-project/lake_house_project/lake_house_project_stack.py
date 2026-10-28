@@ -11,6 +11,8 @@ from lake_house_project.networking_streaming import LakehouseStreamingNetworking
 from lake_house_project.glue_streaming import GlueStreaming
 from lake_house_project.datasync import LakehouseDataSync
 from lake_house_project.glue_landing_to_raw import LakehouseLandingToRaw
+from lake_house_project.glue_raw_to_transformed import LakehouseRawToTransformed
+from lake_house_project.step_functions import LakehouseStepFunctions
 
 
 class LakeHouseProjectStack(Stack):
@@ -88,4 +90,19 @@ class LakeHouseProjectStack(Stack):
             script_bucket=self.storage.glue_assets_bucket,
             kms_key=self.storage.kms_key,
             script_deployment=self.glue.deployment,
+        )
+
+        self.raw_to_transformed = LakehouseRawToTransformed(
+            self,
+            raw_bucket=self.storage.raw_bucket,
+            transformed_bucket=self.storage.transformed_bucket,
+            script_bucket=self.storage.glue_assets_bucket,
+            kms_key=self.storage.kms_key,
+            script_deployment=self.glue.deployment,
+        )
+
+        self.step_functions = LakehouseStepFunctions(
+            self,
+            landing_to_raw_job=self.landing_to_raw.job,
+            raw_to_transformed_job=self.raw_to_transformed.job,
         )
