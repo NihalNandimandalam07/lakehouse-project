@@ -13,6 +13,7 @@ from lake_house_project.datasync import LakehouseDataSync
 from lake_house_project.glue_landing_to_raw import LakehouseLandingToRaw
 from lake_house_project.glue_raw_to_transformed import LakehouseRawToTransformed
 from lake_house_project.databrew import LakehouseDataBrew
+from lake_house_project.glue_transformed_to_curated import LakehouseTransformedToCurated
 from lake_house_project.glue_transformed_crawler import LakehouseTransformedCrawler
 from lake_house_project.step_functions import LakehouseStepFunctions
 
@@ -111,9 +112,19 @@ class LakeHouseProjectStack(Stack):
             kms_key=self.storage.kms_key,
         )
 
+        self.transformed_to_curated = LakehouseTransformedToCurated(
+            self,
+            transformed_bucket=self.storage.transformed_bucket,
+            curated_bucket=self.storage.curated_bucket,
+            script_bucket=self.storage.glue_assets_bucket,
+            kms_key=self.storage.kms_key,
+            script_deployment=self.glue.deployment,
+        )
+
         self.transformed_crawler = LakehouseTransformedCrawler(
             self,
             transformed_bucket=self.storage.transformed_bucket,
+            curated_bucket=self.storage.curated_bucket,
             kms_key=self.storage.kms_key,
         )
 
@@ -123,4 +134,5 @@ class LakeHouseProjectStack(Stack):
             raw_to_transformed_job=self.raw_to_transformed.job,
             data_quality_jobs=self.databrew.profile_jobs,
             customers_recipe_job=self.databrew.customers_recipe_job,
+            transformed_to_curated_job=self.transformed_to_curated.job,
         )

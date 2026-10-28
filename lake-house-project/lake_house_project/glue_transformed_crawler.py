@@ -21,9 +21,16 @@ TRANSFORMED_DATASETS = {
     "dataexchange": "dataexchange/covid19_activity/",
 }
 
+#curated tables are named curated_<folder> (curated_employees, ...)
+CURATED_DATASETS = {
+    "employees": "employees/",
+    "customers": "customers/",
+    "covid": "covid/",
+}
+
 
 class LakehouseTransformedCrawler:
-    """Glue database and crawlers cataloguing the transformed zone.
+    """Glue database and crawlers cataloguing the transformed and curated zones.
 
     Resources are created directly on the stack (not a nested Construct)
     so their CloudFormation logical IDs stay unchanged.
@@ -33,6 +40,7 @@ class LakehouseTransformedCrawler:
         self,
         scope: Stack,
         transformed_bucket: s3.IBucket,
+        curated_bucket: s3.IBucket,
         kms_key: kms.IKey,
         database_name: str = "lakehouse_db_nn",
     ) -> None:
@@ -44,7 +52,7 @@ class LakehouseTransformedCrawler:
             catalog_id=scope.account,
             database_input=glue.CfnDatabase.DatabaseInputProperty(
                 name=database_name,
-                description="Lakehouse transformed zone tables",
+                description="Lakehouse transformed and curated zone tables",
             ),
         )
 
@@ -64,6 +72,7 @@ class LakehouseTransformedCrawler:
         #objects are SSE-KMS encrypted, so reading needs decrypt on the key
         kms_key.grant_decrypt(crawler_role)
         transformed_bucket.grant_read(crawler_role)
+        curated_bucket.grant_read(crawler_role)
 
         #Lake Formation controls the catalog in this account, so IAM alone isn't enough.
         #The deploy role created the database, which lets it grant on it; the crawler
@@ -87,28 +96,33 @@ class LakehouseTransformedCrawler:
 
         self.crawlers = []
 
-        for table_prefix, prefix in TRANSFORMED_DATASETS.items():
+        #(zone, crawler key, table prefix, S3 path)
+        targets = [
+            ("transformed", key, f"{key}_", f"s3://{transformed_bucket.bucket_name}/{prefix}")
+            for key, prefix in TRANSFORMED_DATASETS.items()
+        ] + [
+            ("curated", key, "curated_", f"s3://{curated_bucket.bucket_name}/{prefix}")
+            for key, prefix in CURATED_DATASETS.items()
+        ]
+
+        for zone, key, table_prefix, path in targets:
 
             #Crawler
             crawler = glue.CfnCrawler(
                 scope,
-                f"LakehouseTransformedCrawler{table_prefix.title()}",
-                name=f"lakehouse-transformed-{table_prefix}-crawler-nn",
+                f"Lakehouse{zone.title()}Crawler{key.title()}",
+                name=f"lakehouse-{zone}-{key}-crawler-nn",
                 role=crawler_role.role_arn,
                 database_name=database_name,
-                table_prefix=f"{table_prefix}_",
+                table_prefix=table_prefix,
                 targets=glue.CfnCrawler.TargetsProperty(
-                    s3_targets=[
-                        glue.CfnCrawler.S3TargetProperty(
-                            path=f"s3://{transformed_bucket.bucket_name}/{prefix}",
-                        )
-                    ]
+                    s3_targets=[glue.CfnCrawler.S3TargetProperty(path=path)]
                 ),
                 schema_change_policy=glue.CfnCrawler.SchemaChangePolicyProperty(
                     update_behavior="UPDATE_IN_DATABASE",
                     delete_behavior="LOG",
                 ),
-                #jobs overwrite the transformed data, so recrawl all of it
+                #jobs overwrite the data, so recrawl all of it
                 recrawl_policy=glue.CfnCrawler.RecrawlPolicyProperty(
                     recrawl_behavior="CRAWL_EVERYTHING"
                 ),
