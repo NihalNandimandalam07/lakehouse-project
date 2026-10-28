@@ -9,7 +9,7 @@ from aws_cdk import (
 from constructs import Construct
 
 
-class LakehouseGlueTransformation:
+class LakehouseLandingToRaw:
     """Glue job moving landing zone data into the raw zone as Parquet.
 
     Resources are created directly on the stack (not a nested Construct)
