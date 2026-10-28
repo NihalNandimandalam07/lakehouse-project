@@ -13,6 +13,7 @@ from lake_house_project.datasync import LakehouseDataSync
 from lake_house_project.glue_landing_to_raw import LakehouseLandingToRaw
 from lake_house_project.glue_raw_to_transformed import LakehouseRawToTransformed
 from lake_house_project.databrew import LakehouseDataBrew
+from lake_house_project.glue_transformed_crawler import LakehouseTransformedCrawler
 from lake_house_project.step_functions import LakehouseStepFunctions
 
 
@@ -107,6 +108,12 @@ class LakeHouseProjectStack(Stack):
             raw_bucket=self.storage.raw_bucket,
             transformed_bucket=self.storage.transformed_bucket,
             results_bucket=self.storage.glue_assets_bucket,
+            kms_key=self.storage.kms_key,
+        )
+
+        self.transformed_crawler = LakehouseTransformedCrawler(
+            self,
+            transformed_bucket=self.storage.transformed_bucket,
             kms_key=self.storage.kms_key,
         )
 
