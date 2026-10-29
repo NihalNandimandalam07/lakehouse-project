@@ -47,7 +47,31 @@ TABLES = {
 }
 
 # --------------------------------------------------
-# 5. Load Each Curated Dataset into Redshift
+# 5. Redshift Table Check
+# --------------------------------------------------
+# Redshift has no TRUNCATE IF EXISTS, so check first;
+# credentials come from the Glue connection's secret.
+jdbc_conf = glue_context.extract_jdbc_conf(args["CONNECTION_NAME"])
+jdbc_url = jdbc_conf.get("fullUrl") or f"{jdbc_conf['url']}/{args['REDSHIFT_DATABASE']}"
+
+def table_exists(table):
+    result = (
+        spark.read.format("jdbc")
+        .option("url", jdbc_url)
+        .option("user", jdbc_conf["user"])
+        .option("password", jdbc_conf["password"])
+        .option("driver", "com.amazon.redshift.jdbc42.Driver")
+        .option(
+            "query",
+            "select 1 from information_schema.tables "
+            f"where table_schema = 'public' and table_name = '{table}'"
+        )
+        .load()
+    )
+    return result.count() > 0
+
+# --------------------------------------------------
+# 6. Load Each Curated Dataset into Redshift
 # --------------------------------------------------
 for prefix, table in TABLES.items():
     source_path = f"{curated}/{prefix}"
@@ -60,23 +84,29 @@ for prefix, table in TABLES.items():
         print(f"Skipping {source_path}: {error}")
         continue
     frame = DynamicFrame.fromDF(df, glue_context, table)
-    # Glue creates the table on the first run, then TRUNCATE runs before
-    # COPY, so every run is a full refresh like the other zones.
-    glue_context.write_dynamic_frame.from_jdbc_conf(
-        frame=frame,
-        catalog_connection=args["CONNECTION_NAME"],
-        connection_options={
-            "database": args["REDSHIFT_DATABASE"],
-            "dbtable": f"public.{table}",
-            "preactions": f"TRUNCATE TABLE public.{table};",
-            "aws_iam_role": args["REDSHIFT_ROLE_ARN"],
-        },
-        redshift_tmp_dir=args["REDSHIFT_TMP_DIR"],
-    )
-    print(f"Successfully loaded {table}")
+    connection_options = {
+        "database": args["REDSHIFT_DATABASE"],
+        "dbtable": f"public.{table}",
+        "aws_iam_role": args["REDSHIFT_ROLE_ARN"],
+    }
+    # Glue creates the table on the first run; after that, empty it
+    # before COPY so every run is a full refresh like the other zones.
+    if table_exists(table):
+        connection_options["preactions"] = f"TRUNCATE TABLE public.{table};"
+    try:
+       glue_context.write_dynamic_frame.from_jdbc_conf(
+           frame=frame,
+           catalog_connection=args["CONNECTION_NAME"],
+           connection_options=connection_options,
+           redshift_tmp_dir=args["REDSHIFT_TMP_DIR"],
+       )
+       print(f"Successfully loaded {table}")
+    except Exception as error:
+       print(f"FAILED to load {table}: {error}")
+       raise
 
 # --------------------------------------------------
-# 6. Commit Glue Job
+# 7. Commit Glue Job
 # --------------------------------------------------
 job.commit()
 print("Curated to Redshift load completed")
