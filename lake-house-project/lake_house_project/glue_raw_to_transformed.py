@@ -44,6 +44,7 @@ class LakehouseRawToTransformed:
         raw_bucket.grant_read(glue_role)
         transformed_bucket.grant_read_write(glue_role)
         script_bucket.grant_read_write(glue_role)
+        self.glue_role = glue_role
 
         #Glue ETL Job
         self.job = glue.CfnJob(

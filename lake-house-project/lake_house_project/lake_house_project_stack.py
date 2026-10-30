@@ -156,6 +156,48 @@ class LakeHouseProjectStack(Stack):
             kms_key=self.storage.kms_key,
         )
 
+        #Bucket policies: each bucket only accepts the project roles that use it
+        #(Athena results and Athena reads go through the SSO admin role, always allowed)
+        bucket_roles = {
+            self.storage.source_bucket: [self.datasync.datasync_role],
+            self.storage.landing_bucket: [
+                self.rds_to_s3.glue_role,
+                self.kafka_to_s3.glue_role,
+                self.datasync.datasync_role,
+                self.landing_to_raw.glue_role,
+            ],
+            self.storage.raw_bucket: [
+                self.landing_to_raw.glue_role,
+                self.raw_to_transformed.glue_role,
+                self.databrew.databrew_role,
+            ],
+            self.storage.transformed_bucket: [
+                self.raw_to_transformed.glue_role,
+                self.databrew.databrew_role,
+                self.transformed_to_curated.glue_role,
+                self.transformed_crawler.crawler_role,
+            ],
+            self.storage.curated_bucket: [
+                self.transformed_to_curated.glue_role,
+                self.curated_to_redshift.glue_role,
+                self.transformed_crawler.crawler_role,
+            ],
+            self.storage.glue_assets_bucket: [
+                self.rds_to_s3.glue_role,
+                self.kafka_to_s3.glue_role,
+                self.landing_to_raw.glue_role,
+                self.raw_to_transformed.glue_role,
+                self.transformed_to_curated.glue_role,
+                self.curated_to_redshift.glue_role,
+                self.databrew.databrew_role,
+                self.redshift.role,
+                self.rds_to_s3.deployment.handler_role,
+            ],
+            self.storage.athena_results_bucket: [],
+        }
+        for bucket, roles in bucket_roles.items():
+            self.storage.restrict_access(self, bucket, roles)
+
         self.step_functions = LakehouseStepFunctions(
             self,
             landing_to_raw_job=self.landing_to_raw.job,

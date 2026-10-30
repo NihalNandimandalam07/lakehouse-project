@@ -3,9 +3,19 @@ from aws_cdk import (
     RemovalPolicy,
     CfnOutput,
     Duration,
+    aws_iam as iam,
     aws_s3 as s3,
     aws_kms as kms,
 )
+
+
+#always allowed so the bucket can't lock out the admin or CloudFormation
+#(SSO admin role, CDK bootstrap roles, account root)
+ADMIN_PRINCIPAL_PATTERNS = [
+    "arn:aws:iam::{account}:role/aws-reserved/sso.amazonaws.com/AWSReservedSSO_AWSAdministratorAccess_*",
+    "arn:aws:iam::{account}:role/cdk-hnb659fds-*",
+    "arn:aws:iam::{account}:root",
+]
 
 
 class LakehouseStorage:
@@ -62,6 +72,22 @@ class LakehouseStorage:
             scope,
             "LakehouseKMSKeyOutput",
             value=self.kms_key.key_arn
+        )
+
+    def restrict_access(self, scope: Stack, bucket: s3.IBucket, roles: list[iam.IRole]) -> None:
+        """Deny every principal except the given project roles and the admin principals."""
+        allowed = [role.role_arn for role in roles] + [
+            pattern.format(account=scope.account) for pattern in ADMIN_PRINCIPAL_PATTERNS
+        ]
+        bucket.add_to_resource_policy(
+            iam.PolicyStatement(
+                sid="DenyOutsideProjectRoles",
+                effect=iam.Effect.DENY,
+                principals=[iam.AnyPrincipal()],
+                actions=["s3:*"],
+                resources=[bucket.bucket_arn, bucket.arn_for_objects("*")],
+                conditions={"ArnNotLike": {"aws:PrincipalArn": allowed}},
+            )
         )
 
     def _create_bucket(self, scope: Stack, construct_id: str, bucket_name: str) -> s3.Bucket:

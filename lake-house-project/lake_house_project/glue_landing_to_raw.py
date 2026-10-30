@@ -44,6 +44,7 @@ class LakehouseLandingToRaw:
         landing_bucket.grant_read(glue_role)
         raw_bucket.grant_read_write(glue_role)
         script_bucket.grant_read_write(glue_role)
+        self.glue_role = glue_role
 
         #Glue ETL Job
         #S3 only, so no Glue connection / VPC needed

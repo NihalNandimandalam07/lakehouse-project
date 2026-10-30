@@ -106,6 +106,7 @@ class LakehouseDataBrew:
         raw_bucket.grant_read(databrew_role)
         transformed_bucket.grant_read_write(databrew_role)
         results_bucket.grant_read_write(databrew_role)
+        self.databrew_role = databrew_role
 
         self.profile_jobs = []
         datasets = {}

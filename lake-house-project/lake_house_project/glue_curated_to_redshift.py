@@ -49,6 +49,7 @@ class LakehouseCuratedToRedshift:
         curated_bucket.grant_read(glue_role)
         script_bucket.grant_read_write(glue_role)
         redshift.secret.grant_read(glue_role)
+        self.glue_role = glue_role
 
         #Glue connection subnet (same AZ as the Secrets Manager and Logs endpoints)
         subnet = vpc.isolated_subnets[0]

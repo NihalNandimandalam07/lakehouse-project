@@ -46,6 +46,7 @@ class LakehouseRdsToS3:
         kms_key.grant_encrypt_decrypt(glue_role)
         landing_bucket.grant_read_write(glue_role)
         script_bucket.grant_read_write(glue_role)
+        self.glue_role = glue_role
 
         glue_role.add_to_policy(
             iam.PolicyStatement(

@@ -67,6 +67,7 @@ class LakehouseTransformedCrawler:
         kms_key.grant_decrypt(crawler_role)
         transformed_bucket.grant_read(crawler_role)
         curated_bucket.grant_read(crawler_role)
+        self.crawler_role = crawler_role
 
         self.crawlers = []
 
