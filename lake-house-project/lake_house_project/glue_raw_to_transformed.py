@@ -70,7 +70,7 @@ class LakehouseRawToTransformed:
             },
         )
 
-        #raw_to_transformed.py is uploaded by the LakehouseGlue script deployment
+        #raw_to_transformed.py is uploaded by the LakehouseRdsToS3 script deployment
         self.job.node.add_dependency(script_deployment)
 
         #outputs

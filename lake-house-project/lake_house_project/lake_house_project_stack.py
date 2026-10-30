@@ -6,9 +6,9 @@ from lake_house_project.networking import LakehouseNetworking
 from lake_house_project.security_groups import LakehouseSecurityGroups
 from lake_house_project.rds import LakehouseRDS
 from lake_house_project.ec2_rds import LakehouseEC2
-from lake_house_project.glue_ingestion import LakehouseGlue
+from lake_house_project.glue_rds_to_s3 import LakehouseRdsToS3
 from lake_house_project.networking_streaming import LakehouseStreamingNetworking
-from lake_house_project.glue_streaming import GlueStreaming
+from lake_house_project.glue_kafka_to_s3 import LakehouseKafkaToS3
 from lake_house_project.datasync import LakehouseDataSync
 from lake_house_project.glue_landing_to_raw import LakehouseLandingToRaw
 from lake_house_project.glue_raw_to_transformed import LakehouseRawToTransformed
@@ -45,7 +45,7 @@ class LakeHouseProjectStack(Stack):
             rds_sg=self.security_groups.rds_sg,
         )
 
-        self.glue = LakehouseGlue(
+        self.rds_to_s3 = LakehouseRdsToS3(
             self,
             vpc=self.networking.vpc,
             glue_sg=self.security_groups.glue_sg,
@@ -68,7 +68,7 @@ class LakeHouseProjectStack(Stack):
         )
 
         #broker IPs are fixed in the Kafka terraform (cidrhost(subnet, 10))
-        self.glue_streaming = GlueStreaming(
+        self.kafka_to_s3 = LakehouseKafkaToS3(
             self,
             "GlueKafkaStreaming",
             streaming_subnet=self.streaming_network.vpc.isolated_subnets[0],
@@ -76,7 +76,7 @@ class LakeHouseProjectStack(Stack):
             landing_bucket=self.storage.landing_bucket,
             script_bucket=self.storage.glue_assets_bucket,
             kms_key=self.storage.kms_key,
-            script_deployment=self.glue.deployment,
+            script_deployment=self.rds_to_s3.deployment,
             kafka_secret_arn="arn:aws:secretsmanager:us-east-2:909698979753:secret:kafka_credentials_testing-XVmehU",
             kafka_bootstrap_servers="10.0.0.10:9092,10.0.1.10:9092,10.0.2.10:9092",
             kafka_topic="lakehouse-topic",
@@ -95,7 +95,7 @@ class LakeHouseProjectStack(Stack):
             raw_bucket=self.storage.raw_bucket,
             script_bucket=self.storage.glue_assets_bucket,
             kms_key=self.storage.kms_key,
-            script_deployment=self.glue.deployment,
+            script_deployment=self.rds_to_s3.deployment,
         )
 
         self.raw_to_transformed = LakehouseRawToTransformed(
@@ -104,7 +104,7 @@ class LakeHouseProjectStack(Stack):
             transformed_bucket=self.storage.transformed_bucket,
             script_bucket=self.storage.glue_assets_bucket,
             kms_key=self.storage.kms_key,
-            script_deployment=self.glue.deployment,
+            script_deployment=self.rds_to_s3.deployment,
         )
 
         self.databrew = LakehouseDataBrew(
@@ -121,7 +121,7 @@ class LakeHouseProjectStack(Stack):
             curated_bucket=self.storage.curated_bucket,
             script_bucket=self.storage.glue_assets_bucket,
             kms_key=self.storage.kms_key,
-            script_deployment=self.glue.deployment,
+            script_deployment=self.rds_to_s3.deployment,
         )
 
         self.transformed_crawler = LakehouseTransformedCrawler(
@@ -147,7 +147,7 @@ class LakeHouseProjectStack(Stack):
             script_bucket=self.storage.glue_assets_bucket,
             kms_key=self.storage.kms_key,
             redshift=self.redshift,
-            script_deployment=self.glue.deployment,
+            script_deployment=self.rds_to_s3.deployment,
         )
 
         self.athena = LakehouseAthena(

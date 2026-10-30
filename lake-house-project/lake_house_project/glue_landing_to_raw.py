@@ -69,7 +69,7 @@ class LakehouseLandingToRaw:
             },
         )
 
-        #landing_to_raw.py is uploaded by the LakehouseGlue script deployment
+        #landing_to_raw.py is uploaded by the LakehouseRdsToS3 script deployment
         self.job.node.add_dependency(script_deployment)
 
         #outputs

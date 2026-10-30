@@ -104,7 +104,7 @@ class LakehouseCuratedToRedshift:
             },
         )
 
-        #curated_to_redshift.py is uploaded by the LakehouseGlue script deployment;
+        #curated_to_redshift.py is uploaded by the LakehouseRdsToS3 script deployment;
         #the workgroup must exist before the connection can reach it
         self.job.node.add_dependency(script_deployment)
         connection.node.add_dependency(redshift.workgroup)

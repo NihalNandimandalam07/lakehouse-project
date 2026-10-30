@@ -70,7 +70,7 @@ class LakehouseTransformedToCurated:
             },
         )
 
-        #transformed_to_curated.py is uploaded by the LakehouseGlue script deployment
+        #transformed_to_curated.py is uploaded by the LakehouseRdsToS3 script deployment
         self.job.node.add_dependency(script_deployment)
 
         #outputs

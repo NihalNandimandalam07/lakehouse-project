@@ -10,7 +10,7 @@ from aws_cdk import (
 )
 
 
-class GlueStreaming(Construct):
+class LakehouseKafkaToS3(Construct):
     def __init__(
         self,
         scope: Construct,
@@ -82,7 +82,7 @@ class GlueStreaming(Construct):
         # ------------------------------------------
         # 5. Glue Script Location
         # ------------------------------------------
-        # kafka_to_s3.py is uploaded by the LakehouseGlue script deployment;
+        # kafka_to_s3.py is uploaded by the LakehouseRdsToS3 script deployment;
         # a second deployment to the same prefix would prune the other script
         script_location = (
             f"s3://{script_bucket.bucket_name}/"

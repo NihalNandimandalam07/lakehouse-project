@@ -10,7 +10,7 @@ from aws_cdk import (
 )
 
 
-class LakehouseGlue:
+class LakehouseRdsToS3:
     """Glue JDBC connection and RDS -> S3 ingestion job for the lakehouse.
 
     Resources are created directly on the stack (not a nested Construct)
