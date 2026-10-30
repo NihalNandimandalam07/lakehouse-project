@@ -17,6 +17,7 @@ from lake_house_project.glue_transformed_to_curated import LakehouseTransformedT
 from lake_house_project.glue_transformed_crawler import LakehouseTransformedCrawler
 from lake_house_project.redshift import LakehouseRedshift
 from lake_house_project.glue_curated_to_redshift import LakehouseCuratedToRedshift
+from lake_house_project.athena import LakehouseAthena
 from lake_house_project.step_functions import LakehouseStepFunctions
 
 
@@ -147,6 +148,12 @@ class LakeHouseProjectStack(Stack):
             kms_key=self.storage.kms_key,
             redshift=self.redshift,
             script_deployment=self.glue.deployment,
+        )
+
+        self.athena = LakehouseAthena(
+            self,
+            results_bucket=self.storage.athena_results_bucket,
+            kms_key=self.storage.kms_key,
         )
 
         self.step_functions = LakehouseStepFunctions(

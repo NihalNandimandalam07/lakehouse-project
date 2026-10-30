@@ -2,6 +2,7 @@ from aws_cdk import (
     Stack,
     RemovalPolicy,
     CfnOutput,
+    Duration,
     aws_s3 as s3,
     aws_kms as kms,
 )
@@ -31,6 +32,13 @@ class LakehouseStorage:
         self.transformed_bucket = self._create_bucket(scope, "TransformedBucket", "lakehouse-transformed-nn")
         self.curated_bucket = self._create_bucket(scope, "CuratedBucket", "lakehouse-curated-nn")
         self.glue_assets_bucket = self._create_bucket(scope, "GlueAssetsBucket", "lakehouse-glue-assets-nn")
+        self.athena_results_bucket = self._create_bucket(scope, "AthenaResultsBucket", "lakehouse-athena-results-nn")
+
+        #query results are only needed for a while
+        self.athena_results_bucket.add_lifecycle_rule(
+            expiration=Duration.days(30),
+            noncurrent_version_expiration=Duration.days(1),
+        )
 
         #outputs
         buckets = {
@@ -39,7 +47,8 @@ class LakehouseStorage:
             "RawBucketName":self.raw_bucket,
             "TransformedBucketName":self.transformed_bucket,
             "CuratedBucketName":self.curated_bucket,
-            "GlueAssetsBucketName":self.glue_assets_bucket
+            "GlueAssetsBucketName":self.glue_assets_bucket,
+            "AthenaResultsBucketName":self.athena_results_bucket
         }
 
         for output_name, bucket in buckets.items():
