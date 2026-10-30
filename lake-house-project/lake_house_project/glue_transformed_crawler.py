@@ -11,7 +11,7 @@ from aws_cdk import (
 
 
 #table prefix -> transformed zone prefix
-#one crawler per dataset so the prefix gives each table a clear name
+#one crawler per transformed dataset so the prefix gives each table a clear name
 #(mysql/employees and kafka/employees would otherwise both be "employees")
 TRANSFORMED_DATASETS = {
     "mysql": "mysql/employees/",
@@ -20,12 +20,9 @@ TRANSFORMED_DATASETS = {
     "dataexchange": "dataexchange/covid19_activity/",
 }
 
-#curated tables are named curated_<folder> (curated_employees, ...)
-CURATED_DATASETS = {
-    "employees": "employees/",
-    "customers": "customers/",
-    "covid": "covid/",
-}
+#curated folder names are unique, so one crawler covers them all
+#and names the tables curated_<folder> (curated_employees, ...)
+CURATED_DATASETS = ["employees/", "customers/", "covid/"]
 
 
 class LakehouseTransformedCrawler:
@@ -71,27 +68,36 @@ class LakehouseTransformedCrawler:
 
         self.crawlers = []
 
-        #(zone, crawler key, table prefix, S3 path)
+        #(construct ID, crawler name, table prefix, S3 paths)
         targets = [
-            ("transformed", key, f"{key}_", f"s3://{transformed_bucket.bucket_name}/{prefix}")
+            (
+                f"LakehouseTransformedCrawler{key.title()}",
+                f"lakehouse-transformed-{key}-crawler-nn",
+                f"{key}_",
+                [f"s3://{transformed_bucket.bucket_name}/{prefix}"],
+            )
             for key, prefix in TRANSFORMED_DATASETS.items()
         ] + [
-            ("curated", key, "curated_", f"s3://{curated_bucket.bucket_name}/{prefix}")
-            for key, prefix in CURATED_DATASETS.items()
+            (
+                "LakehouseCuratedCrawler",
+                "lakehouse-curated-crawler-nn",
+                "curated_",
+                [f"s3://{curated_bucket.bucket_name}/{prefix}" for prefix in CURATED_DATASETS],
+            )
         ]
 
-        for zone, key, table_prefix, path in targets:
+        for construct_id, crawler_name, table_prefix, paths in targets:
 
             #Crawler
             crawler = glue.CfnCrawler(
                 scope,
-                f"Lakehouse{zone.title()}Crawler{key.title()}",
-                name=f"lakehouse-{zone}-{key}-crawler-nn",
+                construct_id,
+                name=crawler_name,
                 role=crawler_role.role_arn,
                 database_name=database_name,
                 table_prefix=table_prefix,
                 targets=glue.CfnCrawler.TargetsProperty(
-                    s3_targets=[glue.CfnCrawler.S3TargetProperty(path=path)]
+                    s3_targets=[glue.CfnCrawler.S3TargetProperty(path=path) for path in paths]
                 ),
                 schema_change_policy=glue.CfnCrawler.SchemaChangePolicyProperty(
                     update_behavior="UPDATE_IN_DATABASE",

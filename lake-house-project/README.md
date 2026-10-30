@@ -244,8 +244,7 @@ aws stepfunctions start-execution \
   --state-machine-arn arn:aws:states:us-east-2:909698979753:stateMachine:lakehouse-etl-workflow-nn
 
 # Refresh the catalog once the workflow succeeds
-for c in transformed-mysql transformed-kafka transformed-flatfiles transformed-dataexchange \
-         curated-employees curated-customers curated-covid; do
+for c in transformed-mysql transformed-kafka transformed-flatfiles transformed-dataexchange curated; do
   aws glue start-crawler --name lakehouse-$c-crawler-nn
 done
 ```
