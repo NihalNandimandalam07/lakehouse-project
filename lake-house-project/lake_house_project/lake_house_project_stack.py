@@ -7,7 +7,7 @@ from lake_house_project.security_groups import LakehouseSecurityGroups
 from lake_house_project.rds import LakehouseRDS
 from lake_house_project.ec2_rds import LakehouseEC2
 from lake_house_project.glue_rds_to_s3 import LakehouseRdsToS3
-from lake_house_project.networking_streaming import LakehouseStreamingNetworking
+from lake_house_project.msk import LakehouseMSK
 from lake_house_project.glue_kafka_to_s3 import LakehouseKafkaToS3
 from lake_house_project.datasync import LakehouseDataSync
 from lake_house_project.glue_landing_to_raw import LakehouseLandingToRaw
@@ -57,29 +57,25 @@ class LakeHouseProjectStack(Stack):
             kms_key=self.storage.kms_key,
         )
 
-        #Kafka cluster lives in a separate terraform project (IAC-apache-kafka-cluster)
-        self.streaming_network = LakehouseStreamingNetworking(
+        #MSK in the lakehouse VPC's isolated subnets, behind the stream SG
+        self.msk = LakehouseMSK(
             self,
-            "LakehouseStreamingNetwork",
-            kafka_vpc_id="vpc-08c397e378c5cefd4",
-            kafka_vpc_cidr="10.0.0.0/16",
-            kafka_route_table_id="rtb-05d371c3e1ff4aee3",
-            kafka_sg_id="sg-04e6a4f44e5c95b24",
+            vpc=self.networking.vpc,
+            stream_sg=self.security_groups.stream_sg,
+            kms_key=self.storage.kms_key,
         )
 
-        #broker IPs are fixed in the Kafka terraform (cidrhost(subnet, 10))
+        #same subnet as the Secrets Manager and Logs endpoints
         self.kafka_to_s3 = LakehouseKafkaToS3(
             self,
             "GlueKafkaStreaming",
-            streaming_subnet=self.streaming_network.vpc.isolated_subnets[0],
-            streaming_security_group=self.streaming_network.glue_sg,
+            subnet=self.networking.vpc.isolated_subnets[0],
+            glue_security_group=self.security_groups.glue_sg,
             landing_bucket=self.storage.landing_bucket,
             script_bucket=self.storage.glue_assets_bucket,
             kms_key=self.storage.kms_key,
             script_deployment=self.rds_to_s3.deployment,
-            kafka_secret_arn="arn:aws:secretsmanager:us-east-2:909698979753:secret:kafka_broker_credentials-3qlnY0",
-            kafka_bootstrap_servers="10.0.0.10:9092,10.0.1.10:9092,10.0.2.10:9092",
-            kafka_topic="lakehouse-topic",
+            msk_cluster=self.msk,
         )
 
         self.datasync = LakehouseDataSync(

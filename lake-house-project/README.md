@@ -5,7 +5,7 @@ A data lake in AWS, deployed as one CDK stack (`LakeHouseProjectStack`, us-east-
 ```
 MySQL (RDS) ─ Glue JDBC ─┐
 Flat files ── DataSync ──┤
-Kafka ─ Glue streaming ──┼─► landing ─► raw ─► transformed ─► curated ─► Redshift Serverless
+MSK ─── Glue streaming ──┼─► landing ─► raw ─► transformed ─► curated ─► Redshift Serverless
 Data Exchange ───────────┘     (Glue)   (DataBrew DQ,  (Glue)      (Glue)
                                          Glue + DataBrew)
                          orchestrated by Step Functions: lakehouse-etl-workflow-nn
@@ -60,7 +60,7 @@ arn:aws:iam::909698979753:role/aws-reserved/sso.amazonaws.com/AWSReservedSSO_AWS
 
 | # | Step | When |
 |---|---|---|
-| 1 | Kafka cluster and credentials secret | Before deploy |
+| 1 | MSK cluster (nothing to do, created by CDK) | — |
 | 2 | Lake Formation admin | Before deploy |
 | 3 | Glue database `lakehouse_catalog_nn` | Before deploy |
 | 4 | Crawler Lake Formation grant | After deploy |
@@ -72,22 +72,14 @@ arn:aws:iam::909698979753:role/aws-reserved/sso.amazonaws.com/AWSReservedSSO_AWS
 | 9 | Running the pipeline | After 4–8 |
 | 10 | Redshift read access for your SSO user | After the first Redshift load |
 
-### 1. Kafka cluster and credentials secret (before deploy)
+### 1. MSK cluster (nothing to do)
 
-The streaming source is a self-managed Kafka cluster, used instead of MSK. It's built by a separate Terraform project: [IAC-apache-kafka-cluster](https://github.com/NihalNandimandalam07/IAC-apache-kafka-cluster), `terraform` branch.
+The streaming source is an Amazon MSK cluster, `lakehouse-msk-nn`, created by CDK in `lake_house_project/msk.py`:
 
-1. Deploy the Kafka cluster from that repo. Its VPC is `10.0.0.0/16`, and the brokers are at `10.0.0.10`, `10.0.1.10` and `10.0.2.10` on port 9092, using SASL_PLAINTEXT/PLAIN.
-2. The Terraform project also creates the Secrets Manager secret `kafka_broker_credentials` (keys `username` and `password`) that the streaming job reads. Nothing to create by hand.
-3. Every time the cluster is rebuilt, its VPC, route table, security group and secret get new IDs. Look them up and update the hard-coded values in `lake_house_project_stack.py`, otherwise the deploy fails with `The vpc ID '...' does not exist`:
-   ```bash
-   aws ec2 describe-vpcs --filters Name=tag:Name,Values=kafka-vpc --query 'Vpcs[0].VpcId' --output text
-   aws ec2 describe-route-tables --filters Name=tag:Name,Values=kafka-route-table --query 'RouteTables[0].RouteTableId' --output text
-   aws ec2 describe-security-groups --filters Name=vpc-id,Values=<kafka vpc id> --query "SecurityGroups[?GroupName!='default'].GroupId" --output text
-   aws secretsmanager describe-secret --secret-id kafka_broker_credentials --query ARN --output text
-   ```
-   These go into `kafka_vpc_id`, `kafka_route_table_id`, `kafka_sg_id` and `kafka_secret_arn`. `kafka_bootstrap_servers` only changes if the broker IPs change in the Terraform.
-
-CDK owns the Kafka-side route back to the lakehouse and the port 9092 security group rule. These would normally belong in the Terraform repo. Running `terraform apply` there removes them, because the Terraform security group and route table use inline rules. Re-run `cdk deploy` afterwards to put them back.
+- Two `kafka.t3.small` brokers, one in each of the lakehouse VPC's isolated subnets, behind `lakehouse-stream-sg-nn`. Creating the cluster takes about 25 minutes of the first deploy.
+- Encrypted at rest with `alias/lakehouse-kms-nn` and in transit with TLS.
+- Clients sign in with **IAM** on port 9098, so there is no Kafka username, password or secret. The Glue streaming role may only read `lakehouse-topic`. The producer Lambda `lakehouse-msk-producer-nn` may only create and write to it.
+- The bootstrap broker list is looked up after the cluster is created and passed to the Glue job and the Lambda. It's also the `LakehouseMSKBootstrapBrokersOutput` stack output.
 
 ### 2. Lake Formation admin (before deploy)
 
@@ -230,13 +222,22 @@ The third-party source is the free **COVID-19 Activity** dataset in AWS Data Exc
 
 ### 8. Kafka messages (after deploy)
 
-The streaming job `lakehouse-kafka-to-s3-nn` reads topic `lakehouse-topic` and expects JSON messages like:
+The streaming job `lakehouse-kafka-to-s3-nn` reads MSK topic `lakehouse-topic` and expects JSON messages like:
 
 ```json
 {"employee_id": 4, "employee_name": "Maria Garcia", "department": "sales", "salary": 61000}
 ```
 
-1. Create the topic, and publish a few messages from a Kafka client in the Kafka VPC. Use SASL_PLAINTEXT/PLAIN with the user in the `kafka_broker_credentials` secret.
+1. Publish messages with the producer Lambda. MSK is private, so the Lambda runs inside the VPC. It creates the topic (3 partitions, 2 replicas) the first time:
+   ```bash
+   aws lambda invoke --function-name lakehouse-msk-producer-nn \
+     --cli-binary-format raw-in-base64-out \
+     --payload '{"messages": [
+       {"employee_id": 4,  "employee_name": "Maria Garcia",  "department": "sales",       "salary": 61000},
+       {"employee_id": 13, "employee_name": "Noah Williams", "department": "engineering", "salary": 99000}
+     ]}' response.json && cat response.json
+   ```
+   The response is `{"topic": "lakehouse-topic", "published": <count>}`.
 2. Start the streaming job:
    ```bash
    aws glue start-job-run --job-name lakehouse-kafka-to-s3-nn
@@ -293,7 +294,7 @@ If the Redshift namespace is re-created, these grants have to be run again.
 ## Differences from the capstone brief
 
 - **Single account.** Everything is deployed to one account rather than separate landing zone, lake house, governance and consumer accounts.
-- **Self-managed Kafka.** It's used instead of MSK, and reuses an existing Terraform-built cluster.
+- **Test messages come from a Lambda.** MSK has no public endpoint, so `lakehouse-msk-producer-nn` publishes the sample Kafka messages from inside the VPC.
 - **Glue jobs are scripts defined in CDK** (`glue_scripts/`). They still appear in Glue Studio.
 - **The Step Functions workflow is defined in CDK.** It can still be opened in Workflow Studio.
 

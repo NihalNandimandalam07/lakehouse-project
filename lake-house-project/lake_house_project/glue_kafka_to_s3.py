@@ -6,8 +6,9 @@ from aws_cdk import (
     aws_s3 as s3,
     aws_ec2 as ec2,
     aws_kms as kms,
-    aws_secretsmanager as secretsmanager,
 )
+
+from lake_house_project.msk import LakehouseMSK
 
 
 class LakehouseKafkaToS3(Construct):
@@ -16,15 +17,13 @@ class LakehouseKafkaToS3(Construct):
         scope: Construct,
         construct_id: str,
         *,
-        streaming_subnet: ec2.ISubnet,
-        streaming_security_group: ec2.ISecurityGroup,
+        subnet: ec2.ISubnet,
+        glue_security_group: ec2.ISecurityGroup,
         landing_bucket: s3.IBucket,
         script_bucket: s3.IBucket,
         kms_key: kms.IKey,
         script_deployment: Construct,
-        kafka_secret_arn: str,
-        kafka_bootstrap_servers: str,
-        kafka_topic: str = "lakehouse-topic",
+        msk_cluster: LakehouseMSK,
         **kwargs
     ):
         super().__init__(
@@ -34,17 +33,7 @@ class LakehouseKafkaToS3(Construct):
         )
         stack = Stack.of(self)
         # ------------------------------------------
-        # 1. Import Existing Kafka Secret
-        # ------------------------------------------
-        kafka_secret = (
-            secretsmanager.Secret.from_secret_complete_arn(
-                self,
-                "KafkaSecret",
-                kafka_secret_arn
-            )
-        )
-        # ------------------------------------------
-        # 2. Create Glue IAM Role
+        # 1. Create Glue IAM Role
         # ------------------------------------------
         glue_role = iam.Role(
             self,
@@ -60,7 +49,7 @@ class LakehouseKafkaToS3(Construct):
             ]
         )
         # ------------------------------------------
-        # 3. Grant S3 and KMS Permissions
+        # 2. Grant S3 and KMS Permissions
         # ------------------------------------------
         # buckets are encrypted with the lakehouse KMS key
         kms_key.grant_encrypt_decrypt(
@@ -74,13 +63,38 @@ class LakehouseKafkaToS3(Construct):
             glue_role
         )
         # ------------------------------------------
-        # 4. Grant Secrets Manager Permissions
+        # 3. Grant MSK Permissions (IAM auth, no secret)
         # ------------------------------------------
-        kafka_secret.grant_read(
-            glue_role
+        glue_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "kafka-cluster:Connect",
+                    "kafka-cluster:DescribeCluster"
+                ],
+                resources=[msk_cluster.cluster.attr_arn]
+            )
+        )
+        glue_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "kafka-cluster:DescribeTopic",
+                    "kafka-cluster:ReadData"
+                ],
+                resources=[msk_cluster.topic_arn(stack)]
+            )
+        )
+        # Spark's Kafka source uses its own consumer groups
+        glue_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "kafka-cluster:AlterGroup",
+                    "kafka-cluster:DescribeGroup"
+                ],
+                resources=[msk_cluster.group_arn(stack)]
+            )
         )
         # ------------------------------------------
-        # 5. Glue Script Location
+        # 4. Glue Script Location
         # ------------------------------------------
         # kafka_to_s3.py is uploaded by the LakehouseRdsToS3 script deployment;
         # a second deployment to the same prefix would prune the other script
@@ -89,31 +103,33 @@ class LakehouseKafkaToS3(Construct):
             "glue-scripts/kafka_to_s3.py"
         )
         # ------------------------------------------
-        # 6. Create Glue Network Connection
+        # 5. Create Glue Network Connection
         # ------------------------------------------
+        # lakehouse VPC subnet with the Secrets Manager/Logs endpoints;
+        # the Glue SG already allows 9098 to the MSK (stream) SG
         glue_connection = glue.CfnConnection(
             self,
-            "KafkaGlueNetworkConnection",
+            "MSKGlueNetworkConnection",
             catalog_id=stack.account,
             connection_input=glue.CfnConnection.ConnectionInputProperty(
-                name="lakehouse-kafka-network-connection-nn",
+                name="lakehouse-msk-network-connection-nn",
                 connection_type="NETWORK",
                 connection_properties={},
                 physical_connection_requirements=(
                     glue.CfnConnection.PhysicalConnectionRequirementsProperty(
                         availability_zone=(
-                            streaming_subnet.availability_zone
+                            subnet.availability_zone
                         ),
-                        subnet_id=streaming_subnet.subnet_id,
+                        subnet_id=subnet.subnet_id,
                         security_group_id_list=[
-                            streaming_security_group.security_group_id
+                            glue_security_group.security_group_id
                         ]
                     )
                 )
             )
         )
         # ------------------------------------------
-        # 7. Create Glue Streaming Job
+        # 6. Create Glue Streaming Job
         # ------------------------------------------
         glue_job = glue.CfnJob(
             self,
@@ -136,13 +152,11 @@ class LakehouseKafkaToS3(Construct):
                 "--enable-continuous-cloudwatch-log": "true",
                 "--enable-job-insights": "true",
                 "--KAFKA_BOOTSTRAP_SERVERS": (
-                    kafka_bootstrap_servers
+                    msk_cluster.bootstrap_brokers
                 ),
-                "--KAFKA_TOPIC": kafka_topic,
-                "--KAFKA_SECRET_ARN": kafka_secret_arn,
+                "--KAFKA_TOPIC": msk_cluster.topic,
                 "--S3_BUCKET": landing_bucket.bucket_name,
-                "--CHECKPOINT_BUCKET": script_bucket.bucket_name,
-                "--AWS_REGION": stack.region
+                "--CHECKPOINT_BUCKET": script_bucket.bucket_name
             },
             worker_type="G.1X",
             number_of_workers=2,
@@ -156,7 +170,7 @@ class LakehouseKafkaToS3(Construct):
             )
         )
         # ------------------------------------------
-        # 8. Define Deployment Dependencies
+        # 7. Define Deployment Dependencies
         # ------------------------------------------
         glue_job.node.add_dependency(
             script_deployment

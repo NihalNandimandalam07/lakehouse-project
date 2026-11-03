@@ -1,0 +1,3 @@
+#boto3/botocore come with the Lambda runtime, so these install with --no-deps
+kafka-python==2.2.21
+aws-msk-iam-sasl-signer-python==1.0.2
