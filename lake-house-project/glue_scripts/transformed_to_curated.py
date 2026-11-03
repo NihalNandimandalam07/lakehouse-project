@@ -71,12 +71,15 @@ def curate_employees(mysql_df, kafka_df):
         "salary",
         "salary_band"
     ]
+    # Neither source records when an employee changed, so Kafka (streamed
+    # changes) wins over the MySQL snapshot: priority 1 beats priority 2.
     sources = []
     if mysql_df is not None:
         sources.append(
             mysql_df.select(
                 *columns,
                 F.lit("mysql").alias("source"),
+                F.lit(2).alias("priority"),
                 F.col("raw_load_timestamp").alias("updated_at")
             )
         )
@@ -85,20 +88,23 @@ def curate_employees(mysql_df, kafka_df):
             kafka_df.select(
                 *columns,
                 F.lit("kafka").alias("source"),
+                F.lit(1).alias("priority"),
                 F.col("ingestion_timestamp").cast("timestamp").alias("updated_at")
             )
         )
     df = sources[0]
     for other in sources[1:]:
         df = df.unionByName(other)
-    # One row per employee: keep the most recent record from either source.
-    latest_first = Window.partitionBy("employee_id").orderBy(
+    # One row per employee: the Kafka record if there is one (latest message
+    # first), otherwise the MySQL record.
+    preferred_first = Window.partitionBy("employee_id").orderBy(
+        F.col("priority").asc(),
         F.col("updated_at").desc()
     )
     return (
-        df.withColumn("row_number", F.row_number().over(latest_first))
+        df.withColumn("row_number", F.row_number().over(preferred_first))
         .filter(F.col("row_number") == 1)
-        .drop("row_number", "updated_at")
+        .drop("row_number", "priority", "updated_at")
     )
 
 # --------------------------------------------------
