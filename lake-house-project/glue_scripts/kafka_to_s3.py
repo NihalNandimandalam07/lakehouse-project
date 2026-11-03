@@ -52,7 +52,7 @@ secret_response = secrets_client.get_secret_value(
 credentials = json.loads(
     secret_response["SecretString"]
 )
-# Keys match the kafka_credentials_testing secret
+# Keys match the kafka_broker_credentials secret
 # created by the Kafka terraform project
 kafka_username = credentials["username"]
 kafka_password = credentials["password"]

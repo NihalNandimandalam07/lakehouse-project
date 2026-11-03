@@ -61,10 +61,10 @@ class LakeHouseProjectStack(Stack):
         self.streaming_network = LakehouseStreamingNetworking(
             self,
             "LakehouseStreamingNetwork",
-            kafka_vpc_id="vpc-08641291830df4c09",
+            kafka_vpc_id="vpc-08c397e378c5cefd4",
             kafka_vpc_cidr="10.0.0.0/16",
-            kafka_route_table_id="rtb-08be945f33e9b652f",
-            kafka_sg_id="sg-0cd48bbac01dec368",
+            kafka_route_table_id="rtb-05d371c3e1ff4aee3",
+            kafka_sg_id="sg-04e6a4f44e5c95b24",
         )
 
         #broker IPs are fixed in the Kafka terraform (cidrhost(subnet, 10))
@@ -77,7 +77,7 @@ class LakeHouseProjectStack(Stack):
             script_bucket=self.storage.glue_assets_bucket,
             kms_key=self.storage.kms_key,
             script_deployment=self.rds_to_s3.deployment,
-            kafka_secret_arn="arn:aws:secretsmanager:us-east-2:909698979753:secret:kafka_credentials_testing-XVmehU",
+            kafka_secret_arn="arn:aws:secretsmanager:us-east-2:909698979753:secret:kafka_broker_credentials-3qlnY0",
             kafka_bootstrap_servers="10.0.0.10:9092,10.0.1.10:9092,10.0.2.10:9092",
             kafka_topic="lakehouse-topic",
         )
