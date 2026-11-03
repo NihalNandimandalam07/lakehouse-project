@@ -32,6 +32,22 @@ If `cdk` fails with `No module named 'aws_cdk'`, the venv's Python isn't on `PAT
 npx cdk deploy --app ".venv/bin/python app.py"
 ```
 
+### First deploy into a new account
+
+DataBrew refuses to create a job when its dataset folder in the raw bucket is empty (`cannot find any objects matching location`). On a fresh account, deploy in two passes:
+
+1. Deploy without the DataBrew jobs. The Step Functions workflow then skips the data quality step and the customers recipe:
+   ```bash
+   cdk deploy -c databrew=false
+   ```
+2. Do manual steps 4–8, then run the ingestion jobs and `lakehouse-landing-to-raw-nn` so every raw folder has data.
+3. Deploy again without the flag. This adds the DataBrew jobs and the full workflow:
+   ```bash
+   cdk deploy
+   ```
+
+If a first deploy fails and rolls back, the buckets and the KMS key are kept (`RETAIN`). Delete the stack, the empty `lakehouse-*-nn` buckets and the RDS final snapshot before deploying again, otherwise the next deploy fails with `already exists`.
+
 ---
 
 ## Manual steps

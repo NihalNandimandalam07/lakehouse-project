@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 
 from aws_cdk import (
     Stack,
@@ -24,7 +24,7 @@ class LakehouseStepFunctions:
         landing_to_raw_job: glue.CfnJob,
         raw_to_transformed_job: glue.CfnJob,
         data_quality_jobs: List[databrew.CfnJob],
-        customers_recipe_job: databrew.CfnJob,
+        customers_recipe_job: Optional[databrew.CfnJob],
         transformed_to_curated_job: glue.CfnJob,
         curated_to_redshift_job: glue.CfnJob,
     ) -> None:
@@ -75,20 +75,24 @@ class LakehouseStepFunctions:
             )
 
         #DataBrew data quality checks on raw (report only, results in S3)
-        data_quality = sfn.Parallel(
-            scope,
-            "RawDataQualityChecks",
-            result_path=sfn.JsonPath.DISCARD,
-        )
-        for job in data_quality_jobs:
-            data_quality.branch(
-                tasks.GlueDataBrewStartJobRun(
-                    scope,
-                    f"DataQuality-{job.name}",
-                    name=job.ref,
-                    integration_pattern=sfn.IntegrationPattern.RUN_JOB,
-                )
+        #without DataBrew jobs (first deploy) the step is left out
+        steps = [landing_to_raw_task]
+        if data_quality_jobs:
+            data_quality = sfn.Parallel(
+                scope,
+                "RawDataQualityChecks",
+                result_path=sfn.JsonPath.DISCARD,
             )
+            for job in data_quality_jobs:
+                data_quality.branch(
+                    tasks.GlueDataBrewStartJobRun(
+                        scope,
+                        f"DataQuality-{job.name}",
+                        name=job.ref,
+                        integration_pattern=sfn.IntegrationPattern.RUN_JOB,
+                    )
+                )
+            steps.append(data_quality)
 
         #raw -> transformed: Glue (employees, COVID) and DataBrew (customers)
         transform = sfn.Parallel(
@@ -97,14 +101,15 @@ class LakehouseStepFunctions:
             result_path=sfn.JsonPath.DISCARD,
         )
         transform.branch(raw_to_transformed_task)
-        transform.branch(
-            tasks.GlueDataBrewStartJobRun(
-                scope,
-                "CustomersRecipeTask",
-                name=customers_recipe_job.ref,
-                integration_pattern=sfn.IntegrationPattern.RUN_JOB,
+        if customers_recipe_job:
+            transform.branch(
+                tasks.GlueDataBrewStartJobRun(
+                    scope,
+                    "CustomersRecipeTask",
+                    name=customers_recipe_job.ref,
+                    integration_pattern=sfn.IntegrationPattern.RUN_JOB,
+                )
             )
-        )
 
         failure = sfn.Fail(
             scope,
@@ -117,18 +122,15 @@ class LakehouseStepFunctions:
             "LakehouseWorkflowSucceeded",
         )
 
-        for step in [landing_to_raw_task, data_quality, transform, transformed_to_curated_task, curated_to_redshift_task]:
+        steps += [transform, transformed_to_curated_task, curated_to_redshift_task]
+        for step in steps:
             step.add_catch(failure, result_path="$.error")
 
         #landing -> raw -> data quality -> transformed -> curated -> Redshift
-        definition = (
-            landing_to_raw_task
-            .next(data_quality)
-            .next(transform)
-            .next(transformed_to_curated_task)
-            .next(curated_to_redshift_task)
-            .next(success)
-        )
+        definition = sfn.Chain.start(steps[0])
+        for step in steps[1:]:
+            definition = definition.next(step)
+        definition = definition.next(success)
 
         #State Machine
         self.state_machine = sfn.StateMachine(

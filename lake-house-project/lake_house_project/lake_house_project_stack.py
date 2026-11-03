@@ -113,6 +113,8 @@ class LakeHouseProjectStack(Stack):
             transformed_bucket=self.storage.transformed_bucket,
             results_bucket=self.storage.glue_assets_bucket,
             kms_key=self.storage.kms_key,
+            #first deploy into empty buckets: cdk deploy -c databrew=false
+            create_jobs=self.node.try_get_context("databrew") != "false",
         )
 
         self.transformed_to_curated = LakehouseTransformedToCurated(

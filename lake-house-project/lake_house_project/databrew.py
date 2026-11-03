@@ -86,7 +86,11 @@ class LakehouseDataBrew:
         transformed_bucket: s3.IBucket,
         results_bucket: s3.IBucket,
         kms_key: kms.IKey,
+        create_jobs: bool = True,
     ) -> None:
+
+        #DataBrew only creates a job when its dataset location already has objects,
+        #so the first deploy into empty buckets skips the jobs (create_jobs=False)
 
         #DataBrew IAM Role
         databrew_role = iam.Role(
@@ -142,6 +146,9 @@ class LakehouseDataBrew:
                 rules=RULES[key],
             )
             ruleset.node.add_dependency(dataset)
+
+            if not create_jobs:
+                continue
 
             #Profile Job with validation (report only, rule failures don't fail the job)
             profile_job = databrew.CfnJob(
@@ -223,6 +230,10 @@ class LakehouseDataBrew:
             install_latest_aws_sdk=False,
         )
         publish_recipe.node.add_dependency(recipe)
+
+        self.customers_recipe_job = None
+        if not create_jobs:
+            return
 
         #Customers Recipe Job
         self.customers_recipe_job = databrew.CfnJob(
